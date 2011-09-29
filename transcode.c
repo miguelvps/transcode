@@ -224,10 +224,17 @@ int main(int argc, const char *argv[]) {
                     return 1;
                 }
 
+                av_init_packet(&packet);
+                // Calculate packet presentation timestamp
+                if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
+                    packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
+                if(stream_output->codec->coded_frame->key_frame)
+                    packet.flags |= AV_PKT_FLAG_KEY;
+                packet.stream_index = stream_output->index;
                 packet.size = len;
                 packet.data = buffer;
-                // Write a packet to an output media file.
-                if (av_write_frame(format_output_context, &packet) < 0) {
+                // Write a packet to an output media file ensuring correct interleaving.
+                if (av_interleaved_write_frame(format_output_context, &packet) < 0) {
                     fprintf(stderr, "Cannot write video frame\n");
                     return 1;
                 }
@@ -253,10 +260,16 @@ int main(int argc, const char *argv[]) {
                     return 1;
                 }
 
+                av_init_packet(&packet);
+                // Calculate packet presentation timestamp
+                if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
+                    packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
+                packet.flags |= AV_PKT_FLAG_KEY;
+                packet.stream_index = stream_output->index;
                 packet.size = len;
                 packet.data = buffer;
-                // Write a packet to an output media file.
-                if (av_write_frame(format_output_context, &packet) < 0) {
+                // Write a packet to an output media file ensuring correct interleaving.
+                if (av_interleaved_write_frame(format_output_context, &packet) < 0) {
                     fprintf(stderr, "Cannot write audio frame\n");
                     return 1;
                 }
