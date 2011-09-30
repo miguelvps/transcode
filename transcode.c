@@ -44,13 +44,14 @@ int main(int argc, const char *argv[]) {
     int len, got_frame, frame_bytes_output, sample_fmt_output_size;
     unsigned int stream_idx;
     uint8_t buffer[409600];
-    int16_t samples[409600];
+    int16_t samples[409600], resamples[409600];
     AVFormatContext *format_input_context, *format_output_context;
     AVStream *stream_input, *stream_output;
     AVCodec *codec;
     AVFrame *frame;
     AVPacket packet;
     AVFifoBuffer *audio_fifo;
+    ReSampleContext *resample_context = NULL; // TODO: audio resample ctx per stream
 
     if (argc != 3) {
         fprintf(stderr, "Usage: %s input output\n", argv[0]);
@@ -169,6 +170,16 @@ int main(int argc, const char *argv[]) {
                     fprintf(stderr, "Cannot open default audio encoder\n");
                     return 1;
                 }
+
+                if (stream_output->codec->channels != stream_input->codec->channels
+                    || stream_output->codec->sample_rate != stream_input->codec->sample_rate
+                    || stream_output->codec->sample_fmt != stream_input->codec->sample_fmt) {
+
+                    resample_context = av_audio_resample_init(stream_output->codec->channels, stream_input->codec->channels,
+                                                            stream_output->codec->sample_rate, stream_input->codec->sample_rate,
+                                                            stream_output->codec->sample_fmt, stream_input->codec->sample_fmt,
+                                                            16, 10, 0, 0.8);
+                }
                 break;
             default:
                 break;
@@ -246,6 +257,10 @@ int main(int argc, const char *argv[]) {
                 }
                 break;
             case CODEC_TYPE_AUDIO:
+                // Calculate encoder frame bytes
+                sample_fmt_output_size = av_get_bytes_per_sample(stream_output->codec->sample_fmt);
+                frame_bytes_output = stream_output->codec->frame_size * sample_fmt_output_size * stream_output->codec->channels;
+
                 got_frame = sizeof(samples);
                 // Decode the audio frame of size avpkt->size from avpkt->data into samples.
                 len = avcodec_decode_audio3(stream_input->codec, samples, &got_frame, &packet);
@@ -256,14 +271,15 @@ int main(int argc, const char *argv[]) {
                 // Free a packet.
                 av_free_packet(&packet);
 
+                // Audio resample
+                if (resample_context != NULL) {
+                    len = audio_resample(resample_context, resamples, samples, got_frame / (stream_input->codec->channels * av_get_bytes_per_sample(stream_input->codec->sample_fmt))); // got_frame/2 = number of frames, depends on format *channels: got_frames / (dec->channels * sample size)
+                    len = len * stream_output->codec->channels * sample_fmt_output_size;
+                }
+
                 // Write all samples to an audio fifo
-                av_fifo_generic_write(audio_fifo, samples, got_frame, NULL);
+                av_fifo_generic_write(audio_fifo, resamples, len, NULL);
 
-                // TODO: audio resample (sample_fmt, sample_rate, channels)
-
-                // Calculate encoder frame bytes
-                sample_fmt_output_size = av_get_bytes_per_sample(stream_output->codec->sample_fmt);
-                frame_bytes_output = stream_output->codec->frame_size * sample_fmt_output_size * stream_output->codec->channels;
 
                 // Encode all available frames
                 while (av_fifo_size(audio_fifo) >= frame_bytes_output) {
@@ -300,7 +316,6 @@ int main(int argc, const char *argv[]) {
 
     // Free a memory block.
     av_free(frame);
-
 
 
     // Write the stream trailer to an output media file and free the file private data.
