@@ -224,15 +224,34 @@ int main(int argc, const char *argv[]) {
             case CODEC_TYPE_VIDEO:
                 // Decode the video frame of size avpkt->size from avpkt->data into picture.
                 len = avcodec_decode_video2(stream_input->codec, frame, &got_frame, &packet);
-                if (!got_frame || len < 0) {
+                if (len < 0) {
                     fprintf(stderr, "Cannot decode video packet\n");
                     return 1;
                 }
+                if (!got_frame) {
+                    av_free_packet(&packet);
+                    continue;
+                }
+
+                // TODO: format and size conversion -> sws context
+                // TODO: frame init set by user:
+                //          interlaced_frame
+                //          mb_type
+                //          motion_val
+                //          pan_scan
+                //          pts (MUST)
+                //          ref_index
+                //          top_field_first
+
+                if (packet.pts == AV_NOPTS_VALUE) {
+                    fprintf(stderr, "Video packet.pts == AV_NOPTS_VALUE");
+                    return 1;
+                }
+                frame->pts = av_rescale_q(packet.pts, stream_input->time_base, stream_output->codec->time_base);
 
                 // Free a packet.
                 av_free_packet(&packet);
 
-                // TODO: format and size conversion -> sws context
 
                 // Encode a video frame into buffer.
                 len = avcodec_encode_video(stream_output->codec, buffer, sizeof(buffer), frame);
