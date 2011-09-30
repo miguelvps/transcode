@@ -43,6 +43,7 @@ void frame_dump(AVFrame *frame) {
 int main(int argc, const char *argv[]) {
     int len, got_frame, frame_bytes_output, sample_fmt_output_size;
     unsigned int stream_idx;
+    uint8_t *tmp;
     uint8_t buffer[409600];
     int16_t samples[409600], resamples[409600];
     AVFormatContext *format_input_context, *format_output_context;
@@ -293,11 +294,14 @@ int main(int argc, const char *argv[]) {
                 // Audio resample
                 if (resample_context != NULL) {
                     len = audio_resample(resample_context, resamples, samples, got_frame / (stream_input->codec->channels * av_get_bytes_per_sample(stream_input->codec->sample_fmt))); // got_frame/2 = number of frames, depends on format *channels: got_frames / (dec->channels * sample size)
-                    len = len * stream_output->codec->channels * sample_fmt_output_size;
+                    got_frame = len * stream_output->codec->channels * sample_fmt_output_size;
+                    tmp = (uint8_t *)resamples;
                 }
+                else
+                    tmp = (uint8_t *)samples;
 
                 // Write all samples to an audio fifo
-                av_fifo_generic_write(audio_fifo, resamples, len, NULL);
+                av_fifo_generic_write(audio_fifo, tmp, got_frame, NULL);
 
 
                 // Encode all available frames
@@ -371,5 +375,3 @@ int main(int argc, const char *argv[]) {
 
     return 0;
 }
-
-
