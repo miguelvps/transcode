@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include <libavutil/mathematics.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/fifo.h>
+#include <libavutil/mathematics.h>
 
 
 void packet_dump(AVPacket *packet) {
@@ -40,7 +41,7 @@ void frame_dump(AVFrame *frame) {
 
 
 int main(int argc, const char *argv[]) {
-    int len, got_frame;
+    int len, got_frame, frame_bytes_output, sample_fmt_output_size;
     unsigned int stream_idx;
     uint8_t buffer[409600];
     int16_t samples[409600];
@@ -49,6 +50,7 @@ int main(int argc, const char *argv[]) {
     AVCodec *codec;
     AVFrame *frame;
     AVPacket packet;
+    AVFifoBuffer *audio_fifo;
 
     if (argc != 3) {
         fprintf(stderr, "Usage: %s input output\n", argv[0]);
@@ -191,12 +193,16 @@ int main(int argc, const char *argv[]) {
 
 
     // TRANSCODE //
+    // Initialize an AVFifoBuffer.
+    audio_fifo = av_fifo_alloc(65536);
 
     // Allocate an AVFrame and set its fields to default values.
     frame = avcodec_alloc_frame();
 
     // Initialize optional fields of a packet with default values.
     av_init_packet(&packet);
+
+
 
     // Return the next frame of a stream.
     while (av_read_frame(format_input_context, &packet) >= 0) {
@@ -247,31 +253,43 @@ int main(int argc, const char *argv[]) {
                     fprintf(stderr, "Cannot decode audio packet\n");
                     return 1;
                 }
-
                 // Free a packet.
                 av_free_packet(&packet);
 
+                // Write all samples to an audio fifo
+                av_fifo_generic_write(audio_fifo, samples, got_frame, NULL);
+
                 // TODO: audio resample (sample_fmt, sample_rate, channels)
 
-                // Encode an audio frame from samples into buffer.
-                len = avcodec_encode_audio(stream_output->codec, buffer, sizeof(buffer), samples);
-                if (len < 0) {
-                    fprintf(stderr, "Cannot encode audio packet");
-                    return 1;
-                }
+                // Calculate encoder frame bytes
+                sample_fmt_output_size = av_get_bytes_per_sample(stream_output->codec->sample_fmt);
+                frame_bytes_output = stream_output->codec->frame_size * sample_fmt_output_size * stream_output->codec->channels;
 
-                av_init_packet(&packet);
-                // Calculate packet presentation timestamp
-                if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
-                    packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
-                packet.flags |= AV_PKT_FLAG_KEY;
-                packet.stream_index = stream_output->index;
-                packet.size = len;
-                packet.data = buffer;
-                // Write a packet to an output media file ensuring correct interleaving.
-                if (av_interleaved_write_frame(format_output_context, &packet) < 0) {
-                    fprintf(stderr, "Cannot write audio frame\n");
-                    return 1;
+                // Encode all available frames
+                while (av_fifo_size(audio_fifo) >= frame_bytes_output) {
+                    // Read a frame from the fifo
+                    av_fifo_generic_read(audio_fifo, samples, frame_bytes_output, NULL);
+
+                    // Encode an audio frame from samples into buffer.
+                    len = avcodec_encode_audio(stream_output->codec, buffer, sizeof(buffer), samples);
+                    if (len < 0) {
+                        fprintf(stderr, "Cannot encode audio packet");
+                        return 1;
+                    }
+
+                    av_init_packet(&packet);
+                    // Calculate packet presentation timestamp
+                    if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
+                        packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
+                    packet.flags |= AV_PKT_FLAG_KEY;
+                    packet.stream_index = stream_output->index;
+                    packet.size = len;
+                    packet.data = buffer;
+                    // Write a packet to an output media file ensuring correct interleaving.
+                    if (av_interleaved_write_frame(format_output_context, &packet) < 0) {
+                        fprintf(stderr, "Cannot write audio frame\n");
+                        return 1;
+                    }
                 }
                 break;
             default:
