@@ -65,6 +65,8 @@ int main(int argc, const char *argv[]) {
     // Register all the codecs, parsers and bitstream filters which were enabled at configuration time
     avcodec_register_all();
 
+    // Global initialization of network components
+    avformat_network_init();
 
     // Allocate an AVFormatContext
     format_input_context = avformat_alloc_context();
@@ -80,7 +82,7 @@ int main(int argc, const char *argv[]) {
     }
 
     // Read packets of a media file to get stream information
-    if (av_find_stream_info(format_input_context) < 0) {
+    if (avformat_find_stream_info(format_input_context, NULL) < 0) {
         fprintf(stderr, "Cannot find stream information");
         return 1;
     }
@@ -95,7 +97,7 @@ int main(int argc, const char *argv[]) {
         }
 
         // Initialize the AVCodecContext to use the given AVCodec.
-        if (avcodec_open(stream_input->codec, codec) < 0) {
+        if (avcodec_open2(stream_input->codec, codec, NULL) < 0) {
             fprintf(stderr, "Cannot open default decoder\n");
             return 1;
         }
@@ -117,12 +119,12 @@ int main(int argc, const char *argv[]) {
     for (stream_idx = 0; stream_idx < format_input_context->nb_streams; stream_idx++) {
         stream_input = format_input_context->streams[stream_idx];
         // Add a new stream to a media file.
-        if ((stream_output = av_new_stream(format_output_context, stream_idx)) == NULL) {
+        if ((stream_output = avformat_new_stream(format_output_context, NULL)) == NULL) {
             fprintf(stderr, "Cannot create new stream\n");
             return 1;
         }
         switch (stream_input->codec->codec_type) {
-            case CODEC_TYPE_VIDEO:
+            case AVMEDIA_TYPE_VIDEO:
                 // Find a registered encoder with a matching codec ID.
                 if ((codec = avcodec_find_encoder(format_output_context->oformat->video_codec)) == NULL) {
                     fprintf(stderr, "Cannot find default video encoder\n");
@@ -142,12 +144,12 @@ int main(int argc, const char *argv[]) {
                     stream_output->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
                 // Initialize the AVCodecContext to use the given AVCodec.
-                if (avcodec_open(stream_output->codec, codec) < 0) {
+                if (avcodec_open2(stream_output->codec, codec, NULL) < 0) {
                     fprintf(stderr, "Cannot open default video encoder\n");
                     return 1;
                 }
                 break;
-            case CODEC_TYPE_AUDIO:
+            case AVMEDIA_TYPE_AUDIO:
                 // Find a registered encoder with a matching codec ID.
                 if ((codec = avcodec_find_encoder(format_output_context->oformat->audio_codec)) == NULL) {
                     fprintf(stderr, "Cannot find default audio encoder\n");
@@ -167,7 +169,7 @@ int main(int argc, const char *argv[]) {
                     stream_output->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
                 // Initialize the AVCodecContext to use the given AVCodec.
-                if (avcodec_open(stream_output->codec, codec) < 0) {
+                if (avcodec_open2(stream_output->codec, codec, NULL) < 0) {
                     fprintf(stderr, "Cannot open default audio encoder\n");
                     return 1;
                 }
@@ -222,7 +224,7 @@ int main(int argc, const char *argv[]) {
         stream_output = format_output_context->streams[packet.stream_index];
 
         switch (stream_input->codec->codec_type) {
-            case CODEC_TYPE_VIDEO:
+            case AVMEDIA_TYPE_VIDEO:
                 // Decode the video frame of size avpkt->size from avpkt->data into picture.
                 len = avcodec_decode_video2(stream_input->codec, frame, &got_frame, &packet);
                 if (len < 0) {
@@ -244,7 +246,7 @@ int main(int argc, const char *argv[]) {
                 //          ref_index
                 //          top_field_first
 
-                if (packet.pts == AV_NOPTS_VALUE) {
+                if (packet.pts == (int64_t)AV_NOPTS_VALUE) {
                     fprintf(stderr, "Video packet.pts == AV_NOPTS_VALUE");
                     return 1;
                 }
@@ -263,7 +265,7 @@ int main(int argc, const char *argv[]) {
 
                 av_init_packet(&packet);
                 // Calculate packet presentation timestamp
-                if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
+                if (stream_output->codec->coded_frame->pts != (int64_t)AV_NOPTS_VALUE)
                     packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
                 if(stream_output->codec->coded_frame->key_frame)
                     packet.flags |= AV_PKT_FLAG_KEY;
@@ -276,7 +278,7 @@ int main(int argc, const char *argv[]) {
                     return 1;
                 }
                 break;
-            case CODEC_TYPE_AUDIO:
+            case AVMEDIA_TYPE_AUDIO:
                 // Calculate encoder frame bytes
                 sample_fmt_output_size = av_get_bytes_per_sample(stream_output->codec->sample_fmt);
                 frame_bytes_output = stream_output->codec->frame_size * sample_fmt_output_size * stream_output->codec->channels;
@@ -318,7 +320,7 @@ int main(int argc, const char *argv[]) {
 
                     av_init_packet(&packet);
                     // Calculate packet presentation timestamp
-                    if (stream_output->codec->coded_frame->pts != AV_NOPTS_VALUE)
+                    if (stream_output->codec->coded_frame->pts != (int64_t)AV_NOPTS_VALUE)
                         packet.pts = av_rescale_q(stream_output->codec->coded_frame->pts, stream_output->codec->time_base, stream_output->time_base);
                     packet.flags |= AV_PKT_FLAG_KEY;
                     packet.stream_index = stream_output->index;
