@@ -283,9 +283,8 @@ int main(int argc, const char *argv[]) {
                 sample_fmt_output_size = av_get_bytes_per_sample(stream_output->codec->sample_fmt);
                 frame_bytes_output = stream_output->codec->frame_size * sample_fmt_output_size * stream_output->codec->channels;
 
-                got_frame = sizeof(samples);
                 // Decode the audio frame of size avpkt->size from avpkt->data into samples.
-                len = avcodec_decode_audio3(stream_input->codec, samples, &got_frame, &packet);
+                len = avcodec_decode_audio4(stream_input->codec, frame, &got_frame, &packet);
                 if (!got_frame || len < 0) {
                     fprintf(stderr, "Cannot decode audio packet\n");
                     return 1;
@@ -295,15 +294,17 @@ int main(int argc, const char *argv[]) {
 
                 // Audio resample
                 if (resample_context != NULL) {
-                    len = audio_resample(resample_context, resamples, samples, got_frame / (stream_input->codec->channels * av_get_bytes_per_sample(stream_input->codec->sample_fmt))); // got_frame/2 = number of frames, depends on format *channels: got_frames / (dec->channels * sample size)
-                    got_frame = len * stream_output->codec->channels * sample_fmt_output_size;
+                    len = audio_resample(resample_context, resamples, (short *)frame->data[0], frame->nb_samples);
+                    len = len * stream_output->codec->channels * sample_fmt_output_size;
                     tmp = (uint8_t *)resamples;
                 }
-                else
-                    tmp = (uint8_t *)samples;
+                else {
+                    len = frame->nb_samples;
+                    tmp = (uint8_t *)frame->data[0];
+                }
 
                 // Write all samples to an audio fifo
-                av_fifo_generic_write(audio_fifo, tmp, got_frame, NULL);
+                av_fifo_generic_write(audio_fifo, tmp, len, NULL);
 
 
                 // Encode all available frames
