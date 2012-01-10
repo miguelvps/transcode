@@ -355,22 +355,8 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
-    // Close all output codecs
-    for (stream_idx = 0; stream_idx < format_output_context->nb_streams; stream_idx++) {
-        stream_output = format_output_context->streams[stream_idx];
-        av_freep(&stream_output->codec->stats_in);
-        avcodec_close(stream_output->codec);
-    }
-
     // Free an AVFormatContext and all its streams.
     avformat_free_context(format_output_context);
-
-    // Close all input codecs
-    for (stream_idx = 0; stream_idx < format_input_context->nb_streams; stream_idx++) {
-        stream_input = format_input_context->streams[stream_idx];
-        av_freep(&stream_input->codec->stats_in);
-        avcodec_close(stream_input->codec);
-    }
 
     // Close an opened input AVFormatContext.
     avformat_close_input(&format_input_context);
