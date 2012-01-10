@@ -28,7 +28,6 @@ void frame_dump(AVFrame *frame) {
     fprintf(stderr, "frame->coded_picture_number %d\n", frame->coded_picture_number);
     fprintf(stderr, "frame->display_picture_number %d\n", frame->display_picture_number);
     fprintf(stderr, "frame->quality %d\n", frame->quality);
-    fprintf(stderr, "frame->age %d\n", frame->age);
     fprintf(stderr, "frame->pkt_pts %ld\n", frame->pkt_pts);
     fprintf(stderr, "frame->pkt_dts %ld\n", frame->pkt_dts);
     fprintf(stderr, "frame->best_effort_timestamp %ld\n", frame->best_effort_timestamp);
