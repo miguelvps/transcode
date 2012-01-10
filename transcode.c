@@ -372,8 +372,8 @@ int main(int argc, const char *argv[]) {
         avcodec_close(stream_input->codec);
     }
 
-    // Close a media file (but not its codecs).
-    av_close_input_file(format_input_context);
+    // Close an opened input AVFormatContext.
+    avformat_close_input(&format_input_context);
 
     return 0;
 }
